@@ -468,150 +468,30 @@ public:
 
 	void ForwardProp(const FrameRange& fr) override
 	{
-		//Input(0)->Value().Print(nullptr); // input ROIs
-		// reshape as ROI_sz x ROIs/im x mb_sz
-		//std::cout << string(Input(0)->GetSampleLayout()).c_str();
 
 		// first dimension is roi_size (4) * rois/image, second is mb size
 		int rois_per_image = GetInputSampleLayout(0)[0] / 4;
 
 		//fprintf(stderr, "ROI_PER_IMAGE: %d\n", rois_per_image);
 
-		auto inputImgShape = GetInputSampleLayout(1);
+		auto inputShape = GetInputSampleLayout(1);
 		Matrix<ElemType> inputSlice = Input(1)->ValueFor(fr);
 		Matrix<ElemType> ROIs = Input(0)->ValueFor(fr);
 
-
 		// our output slice for this minibatch.
-		// todo: see shape comment in validate.
 		Matrix<ElemType> outputSlice = ValueFor(fr);
-
-		// outslice is filled in "CHWR" format.
-		// outslice(roi_idx,c,h,w) = outslice(roi_idx * roi_size + chan + (row + col*height)*num_chan)
-		// outslice should be e.g. rois_per_image*7*7*32 x 32
-		// can read ROIs contiguously.
-		
 
 		// input slice is w*h*c x bsz; cols are images.
 		// rois is rois_per_image*4 x bsz; cols are rois for different images.
 		// each ROI is (x, y, w, h) relative to original image size.
-		// todo: read ROIs, compute from ROI data which features to use in the pooling
-		// map and also the kernel size. q: how to slice into inputSlice to get the right features???
-		// how can we compute projection from image -> conv2 output?
-		//fprintf(stderr, "ROIs NUM COLS: %d, ROWS: %d\n", ROIs.GetNumCols(), ROIs.GetNumRows());
-		//fprintf(stderr, "INPUTSLICE NUM COLS: %d, ROWS: %d\n", inputSlice.GetNumCols(), inputSlice.GetNumRows());
-		//fprintf(stderr, "OUTPUT SHAPE: (%lu, %lu)\n", (unsigned long)outputSlice.GetNumRows(), (unsigned long)outputSlice.GetNumCols());
 
-		int input_w = inputImgShape[0];
-		int input_h = inputImgShape[1];
-		int num_channels = inputImgShape[2];
-		int roi_output_size = m_outH*m_outW*num_channels;
+		int input_w = inputShape[0];
+		int input_h = inputShape[1];
+		int num_channels = inputShape[2];
 
-		// fprop loop. looping over images (columns of inputSlice)
+		inputSlice.ROIPoolingForward(rois_per_image, inputSlice.GetNumCols(), 
+			num_channels, input_h, input_w, m_outH, m_outW, ROIs, outputSlice);
 
-#pragma omp parallel for
-		for (int img_idx = 0; img_idx < inputSlice.GetNumCols(); img_idx++) {
-			auto img = inputSlice.ColumnSlice(img_idx, 1);
-			auto rois = ROIs.ColumnSlice(img_idx, 1);
-
-			//fprintf(stderr, "IMAGE %d COLUMN:\n", img_idx);
-			//img.Print(nullptr);
-
-			// loop over rois per image.
-#pragma omp parallel for
-			for (int roi_idx = 0; roi_idx < rois_per_image; roi_idx++) {
-
-				int base = roi_idx * 4;
-
-				// scaled ROI numbers (relative to original image size)
-				// roi points are doubles that represent location relative to image
-				double sc_x = rois.GetValue(base, 0);
-				double sc_y = rois.GetValue(base + 1, 0); 
-				double sc_w = rois.GetValue(base + 2, 0);
-				double sc_h = rois.GetValue(base + 3, 0);
-
-				// compute actual spatial location of the ROI in our featuremap.
-				int x = (int)round(sc_x * input_w);
-				int y = (int)round(sc_y * input_h);
-				int roi_w = (int)max(round(sc_w * input_w), 1.0);
-				int roi_h = (int)max(round(sc_h * input_h), 1.0);
-
-				//fprintf(stderr, "ROI %d: (X, Y, W, H) in infm: (%d, %d, %d, %d)\n", roi_idx, x, y, roi_w, roi_h);
-
-				const double winW = double(roi_w) / double(m_outW);
-				const double winH = double(roi_h) / double(m_outH);
-
-				// from Ross Girshick fast-rcnn caffe cpu
-				// loop over spatial locations in output.
-				for (int outw = 0; outw < m_outW; outw++) {
-					for (int outh = 0; outh < m_outH; outh++) {
-						//fprintf(stderr, "computing output spatial location %d %d\n", outw, outh);
-
-						// compute the top left corner of the input
-						// spatial window corresponding to this output unit
-						int hstart = (int)floor(double(outh)*winH);
-						int wstart = (int)floor(double(outw)*winW);
-
-						// compute bottom right corner (not included)
-						int hend = (int)ceil(double(outh + 1) * winH);
-						int wend = (int)ceil(double(outw + 1) * winW);
-
-						// offset window based on ROI top left corner.
-						// these indices are into the input slice.
-						hstart = min(max(hstart + y, 0), input_h); // need - 1 here?
-						hend = min(max(hend + y, 0), input_h);
-						wstart = min(max(wstart + x, 0), input_w); // need - 1 here?
-						wend = min(max(wend + x, 0), input_w);
-
-						//fprintf(stderr, "ROI window: (xmin ymin xmax ymax): (%d %d %d %d)\n", wstart, hstart, wend, hend);
-
-						bool isempty = (hend <= hstart) || (wend <= wstart);
-
-						for (int c = 0; c < num_channels; c++) {
-							//int output_idx = roi_idx*roi_output_size + c + (outh + outw*m_outH)*num_channels;
-							int output_idx = roi_idx*roi_output_size + outw + outh*m_outW + c*m_outH*m_outW;
-							//fprintf(stderr, "going in output location %d\n", output_idx);
-							outputSlice(output_idx, img_idx) = -1;
-
-							if (isempty)
-								outputSlice(output_idx, img_idx) = 0;
-
-							for (int h = hstart; h < hend; h++) {
-								for (int w = wstart; w < wend; w++) {
-									int data_idx = w + h*input_w + c*input_h*input_w;
-									//int data_idx = c + (h + w*input_h)*num_channels;
-									if (img(data_idx, 0) > outputSlice(output_idx, img_idx)) {
-										outputSlice(output_idx, img_idx) = img(data_idx, 0);
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-			/*
-			// for debugging. output image slice & roi slice for channel 0.
-			if (img_idx == 0) {
-				Matrix<ElemType> imgMat = Matrix<ElemType>::Zeros(input_w, input_h, m_deviceId);
-				for (int w = 0; w < input_w; w++) {
-					for (int h = 0; h < input_h; h++) {
-						imgMat(w, h) = img((h + w * input_h) * num_channels, 0);
-					}
-				}
-
-				Matrix<ElemType> roiMat = Matrix<ElemType>::Zeros(m_outW, m_outH, m_deviceId);
-				for (int w = 0; w < m_outW; w++) {
-					for (int h = 0; h < m_outH; h++) {
-						roiMat(w, h) = outputSlice((h + w * m_outH) * num_channels, 0);
-					}
-				}
-
-				fprintf(stderr, "IMAGE MAT:\n");
-				imgMat.Print(nullptr);
-				fprintf(stderr, "ROI MAT:\n");
-				roiMat.Print(nullptr);
-			}*/
-		}
 	}
 
 	void Save(File& fstream) const override

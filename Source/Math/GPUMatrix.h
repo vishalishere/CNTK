@@ -447,6 +447,9 @@ public:
                             GPUMatrix<ElemType>& grad) const;
     void MaxUnpooling(const GPUMatrix<int>& mpRowCol, const GPUMatrix<int>& mpRowIndices, const GPUMatrix<int>& indices, const GPUMatrix<ElemType>& poolInput, GPUMatrix<ElemType>& input) const;
 
+	void ROIPoolingForward(const int num_rois, const int img_count, const int channels, const int height, const int width,
+		const int pooled_height, const int pooled_width, const GPUMatrix<ElemType>& roi_data, GPUMatrix<ElemType>& output) const;
+
     void AveragePoolingForward(const GPUMatrix<int>& mpRowCol, const GPUMatrix<int>& mpRowIndices, const GPUMatrix<int>& indices, GPUMatrix<ElemType>& output) const;
     void AveragePoolingBackward(const GPUMatrix<int>& mpRowCol, const GPUMatrix<int>& mpRowIndices, const GPUMatrix<int>& indices, GPUMatrix<ElemType>& grad) const;
 

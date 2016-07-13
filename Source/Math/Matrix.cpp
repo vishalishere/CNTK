@@ -4208,6 +4208,21 @@ void Matrix<ElemType>::MaxPoolingBackward(const Matrix<ElemType>& out, const Mat
 }
 
 template <class ElemType>
+void Matrix<ElemType>::ROIPoolingForward(const int num_rois, const int img_count, const int channels, const int height, const int width,
+	const int pooled_height, const int pooled_width, const Matrix<ElemType>& roi_data, Matrix<ElemType>& output) const
+{
+	DecideAndMoveToRightDevice(*this, output);
+
+	DISPATCH_MATRIX_ON_FLAG(this,
+		this,
+		m_CPUMatrix->ROIPoolingForward(num_rois, img_count, channels, height, width, pooled_height, pooled_width, *(roi_data.m_CPUMatrix), *(output.m_CPUMatrix)),
+		m_GPUMatrix->ROIPoolingForward(num_rois, img_count, channels, height, width, pooled_height, pooled_width, *(roi_data.m_GPUMatrix), *(output.m_GPUMatrix)),
+		NOT_IMPLEMENTED,
+		NOT_IMPLEMENTED);
+}
+
+
+template <class ElemType>
 void Matrix<ElemType>::MaxUnpooling(const Matrix<int>& mpRowCol, const Matrix<int>& mpRowIndices, const Matrix<int>& indices, const Matrix<ElemType>& poolInput, Matrix<ElemType>& input) const
 {
     assert(mpRowCol.GetNumCols() == 1);

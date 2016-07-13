@@ -3074,6 +3074,37 @@ void GPUMatrix<ElemType>::MaxPoolingBackward(const GPUMatrix<ElemType>& out, con
                                                             Data(), (int)GetNumRows(), grad.Data(), (int)grad.GetNumRows());
 }
 
+
+
+template <class ElemType>
+void GPUMatrix<ElemType>::ROIPoolingForward(const int num_rois, const int img_count, const int channels, const int height, const int width, 
+	const int pooled_height, const int pooled_width, const GPUMatrix<ElemType>& roi_data, GPUMatrix<ElemType>& output) const
+{	
+	PrepareDevice();
+	SyncGuard syncGuard;
+
+	int count = num_rois * img_count * channels * pooled_height * pooled_width;
+	int nthreads = (int)floor((double)(count + 1024 - 1) / 1024);
+
+	// fprintf(stderr, "nthreads: %d\n", nthreads);
+	// fprintf(stderr, "count: %d\n", count);
+
+	kROIPoolingForward<<<nthreads, 128, 0, t_stream>>>(count, num_rois, img_count, channels, height, 
+		width, pooled_height, pooled_width, Data(), roi_data.Data(), output.Data());
+	/*
+	auto cudaError = cudaGetLastError();
+	if (cudaError != cudaSuccess) 
+	{
+		fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(cudaError));
+	}
+	else {
+		fprintf(stderr, "KERNEL SUCCESS\n");
+	}
+	fprintf(stderr, "passed ROIPool kernel call");
+	*/
+}
+
+
 template <class ElemType>
 void GPUMatrix<ElemType>::MaxUnpooling(const GPUMatrix<int>& mpRowCol, const GPUMatrix<int>& mpRowIndices, const GPUMatrix<int>& indices, const GPUMatrix<ElemType>& poolInput, GPUMatrix<ElemType>& input) const
 {
