@@ -4318,7 +4318,7 @@ void CPUMatrix<ElemType>::MaxPoolingBackward(const CPUMatrix<ElemType>& out, con
 
 template <class ElemType>
 void CPUMatrix<ElemType>::ROIPoolingForward(const int num_rois, const int img_count, const int channels, const int height, const int width,
-	const int pooled_height, const int pooled_width, const CPUMatrix<ElemType>& roi_data, CPUMatrix<ElemType>& output) const
+	const int pooled_height, const int pooled_width, const CPUMatrix<ElemType>& roi_data, CPUMatrix<ElemType>& output, CPUMatrix<ElemType>& argmax) const
 {
 	int roi_output_size = pooled_height * pooled_width * channels;
 
@@ -4327,6 +4327,7 @@ void CPUMatrix<ElemType>::ROIPoolingForward(const int num_rois, const int img_co
 		auto img = ColumnSlice(img_idx, 1);
 		auto rois = roi_data.ColumnSlice(img_idx, 1);
 
+#pragma omp parallel for
 		for (int roi_idx = 0; roi_idx < num_rois; roi_idx++) {
 
 			int base = roi_idx * 4;
@@ -4391,6 +4392,11 @@ void CPUMatrix<ElemType>::ROIPoolingForward(const int num_rois, const int img_co
 								//int data_idx = c + (h + w*input_h)*num_channels;
 								if (img(data_idx, 0) > output(output_idx, img_idx)) {
 									output(output_idx, img_idx) = img(data_idx, 0);
+									if (0) {
+										argmax.Print(nullptr);
+									}
+
+									//argmax(output_idx, img_idx) = data_idx;
 								}
 							}
 						}
@@ -4400,6 +4406,22 @@ void CPUMatrix<ElemType>::ROIPoolingForward(const int num_rois, const int img_co
 		}
 	}
 }
+
+
+template <class ElemType>
+void CPUMatrix<ElemType>::ROIPoolingBackward(const int num_rois, const int img_count, const int channels, const int height, const int width,
+	const int pooled_height, const int pooled_width, const CPUMatrix<ElemType>& roi_data, CPUMatrix<ElemType>& grad, 
+	CPUMatrix<ElemType>& argmax) const
+{
+	int x = num_rois + img_count + channels + height + width + pooled_height + pooled_width;
+	if (0) {
+		roi_data.Print(nullptr);
+		grad.Print(nullptr);
+		argmax.Print(nullptr);
+		fprintf(stderr, "%d", x);
+	}
+}
+
 
 template <class ElemType>
 void CPUMatrix<ElemType>::MaxUnpooling(const CPUMatrix<int>& mpRowCol, const CPUMatrix<int>& mpRowIndices,

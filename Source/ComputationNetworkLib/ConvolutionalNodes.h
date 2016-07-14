@@ -490,7 +490,7 @@ public:
 		int num_channels = inputShape[2];
 
 		inputSlice.ROIPoolingForward(rois_per_image, inputSlice.GetNumCols(), 
-			num_channels, input_h, input_w, m_outH, m_outW, ROIs, outputSlice);
+			num_channels, input_h, input_w, m_outH, m_outW, ROIs, outputSlice, *m_tempMatrix);
 
 	}
 
@@ -537,7 +537,21 @@ public:
 
 	void BackpropTo(const size_t /*inputIndex*/, const FrameRange& fr) override
 	{
-		// todo
+		auto inputShape = GetInputSampleLayout(1);
+		Matrix<ElemType> inputSlice = Input(1)->ValueFor(fr);
+
+		int input_w = inputShape[0];
+		int input_h = inputShape[1];
+		int num_channels = inputShape[2];
+
+		auto& input_grad = Input(1)->GradientAsMatrix();
+		auto pooledGrad = GradientFor(fr);
+
+		int rois_per_image = GetInputSampleLayout(0)[0] / 4;
+		auto roi_data = Input(0)->ValueFor(fr);
+
+		pooledGrad.ROIPoolingBackward(rois_per_image, inputSlice.GetNumCols(), num_channels, 
+			input_h, input_w, m_outH, m_outW, roi_data, input_grad, *m_tempMatrix);
 	}
 
 	void DumpNodeInfo(const bool printValues, const bool printMetadata, File& fstream) const override

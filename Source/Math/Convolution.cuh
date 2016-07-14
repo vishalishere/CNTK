@@ -218,14 +218,11 @@ __global__ void kROIPoolingForward(const int nthreads,
 	const int num_rois, const int img_count,
 	const int channels, const int height, const int width,
 	const int pooled_height, const int pooled_width, const ElemType* src, 
-	const ElemType* roi_data, ElemType* dst)
+	const ElemType* roi_data, ElemType* dst, ElemType* argmax)
 {
 	// index loops over all total_rois*c*pooled_height*pooled_width output locations.
 	for (int index = blockIdx.x * blockDim.x + threadIdx.x;
 		index < (nthreads); index += blockDim.x * gridDim.x) {
-		
-		// rois_per_image * num_images
-		int total_rois = num_rois * img_count;
 		
 		// we want NCHW
 		// (n, c, ph, pw) is an element in the pooled output
@@ -234,6 +231,7 @@ __global__ void kROIPoolingForward(const int nthreads,
 		int roi_size = channels * pooled_height * pooled_width;
 		int n = index / roi_size;
 
+		// this section is still wrong
 		int effective_index = index % roi_size;
 		int pw = effective_index % pooled_width;
 		int ph = (effective_index / pooled_width) % pooled_height;
@@ -247,9 +245,9 @@ __global__ void kROIPoolingForward(const int nthreads,
 		int roi_width = (int)max(round(roi_data[2] * width), 1.0);
 		int roi_height = (int)max(round(roi_data[3] * height), 1.0);
 		
-		float winW = static_cast<float>(roi_height)
+		float winH = static_cast<float>(roi_height)
 			/ static_cast<float>(pooled_height);
-		float winH = static_cast<float>(roi_width)
+		float winW = static_cast<float>(roi_width)
 			/ static_cast<float>(pooled_width);
 		
 		// compute window for this output location.
@@ -268,10 +266,11 @@ __global__ void kROIPoolingForward(const int nthreads,
 		wstart = min(max(wstart + roi_start_w, 0), width);
 		wend = min(max(wend + roi_start_w, 0), width);
 		
-		bool is_empty = (hend <= hstart) || (wend <= wstart);
+		bool isempty = (hend <= hstart) || (wend <= wstart);
 		// Define an empty pooling region to be zero
-		float maxval = is_empty ? 0 : -FLT_MAX;
-		
+		float maxval = isempty ? 0 : -FLT_MAX;
+		int maxidx = -1;
+
 		// img_idx = n (global roi index) / num_rois (rois per image)
 		int img_idx = n / num_rois;
 
@@ -285,12 +284,90 @@ __global__ void kROIPoolingForward(const int nthreads,
 				//int src_index = 0;
 				if (src[src_index] > maxval) {
 					maxval = src[src_index];
-					//maxidx = src_index;
+					maxidx = src_index;
 				}
 			}
 		}
-		dst[index] = maxval;
 
+		dst[index] = maxval;
+		argmax[index] = maxidx;
+	}
+}
+
+template <typename ElemType>
+__global__ void kROIPoolingBackward(const int nthreads,
+	const int num_rois, const int img_count,
+	const int channels, const int height, const int width,
+	const int pooled_height, const int pooled_width, const ElemType* pooled_grad,
+	const ElemType* roi_data, ElemType* grad, const ElemType* argmax)
+{
+	return;
+	// index loops over all input locations (locations in the original input tensor).
+	for (int index = blockIdx.x * blockDim.x + threadIdx.x;
+		index < (nthreads); index += blockDim.x * gridDim.x) {
+
+		// rois_per_image * num_images
+		int total_rois = num_rois * img_count;
+
+		// we want NCHW
+		// (n, c, ph, pw) is an element in the pooled output
+		// n is the global ROI index (the new batch index)
+
+
+		int roi_size = channels * pooled_height * pooled_width;
+		int n = index / roi_size;
+
+		// this section is still wrong
+		int effective_index = index % roi_size;
+		int pw = effective_index % pooled_width;
+		int ph = (effective_index / pooled_width) % pooled_height;
+		int c = effective_index / pooled_height / pooled_width;
+
+		roi_data += n * 4;
+
+		// roi data is relative to original image size
+		int roi_start_w = round(roi_data[0] * width);
+		int roi_start_h = round(roi_data[1] * height);
+		int roi_width = (int)max(round(roi_data[2] * width), 1.0);
+		int roi_height = (int)max(round(roi_data[3] * height), 1.0);
+
+		float winH = static_cast<float>(roi_height)
+			/ static_cast<float>(pooled_height);
+		float winW = static_cast<float>(roi_width)
+			/ static_cast<float>(pooled_width);
+
+		// compute window for this output location.
+		int hstart = static_cast<int>(floor(static_cast<float>(ph)
+			* winH));
+		int wstart = static_cast<int>(floor(static_cast<float>(pw)
+			* winW));
+		int hend = static_cast<int>(ceil(static_cast<float>(ph + 1)
+			* winH));
+		int wend = static_cast<int>(ceil(static_cast<float>(pw + 1)
+			* winW));
+
+		// Add roi offsets and clip to input boundaries
+		hstart = min(max(hstart + roi_start_h, 0), height);
+		hend = min(max(hend + roi_start_h, 0), height);
+		wstart = min(max(wstart + roi_start_w, 0), width);
+		wend = min(max(wend + roi_start_w, 0), width);
+
+		bool isempty = (hend <= hstart) || (wend <= wstart);
+		// Define an empty pooling region to be zero
+		float maxval = isempty ? 0 : -FLT_MAX;
+
+		// img_idx = n (global roi index) / num_rois (rois per image)
+		int img_idx = n / num_rois;
+
+
+		for (int h = hstart; h < hend; h++) {
+			for (int w = wstart; w < wend; w++) {
+				// don't think this is right
+				//int src_index = h * width * img_count + w * img_count + roi_batch_ind;
+				//int src_index = 0;
+
+			}
+		}
 	}
 }
 
