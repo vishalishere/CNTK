@@ -10,6 +10,8 @@
 #include "Transformer.h"
 #include "SequenceEnumerator.h"
 
+#include <fstream>
+
 namespace Microsoft { namespace MSR { namespace CNTK {
 
 // A pair of a transformer and the stream name to which the transformer should be a applied.
@@ -64,20 +66,37 @@ public:
     virtual Sequences GetNextSequences(size_t sampleCount) override
     {
         assert(m_sequenceProvider != nullptr);
-        Sequences sequences = m_sequenceProvider->GetNextSequences(sampleCount);
-        if (sequences.m_data.empty())
-        {
-            return sequences;
-        }
+		int sampleSize = 1300;
+		Sequences sequences;
+
+		std::ofstream testFileOut("CNTK-image-proc");
+
+		for (int index = 0; index < sampleSize; index++) {
+			sequences = m_sequenceProvider->GetNextSequences(sampleCount);
+			if (sequences.m_data.empty())
+			{
+				return sequences;
+			}
 
 #pragma omp parallel for schedule(dynamic)
-        for (int j = 0; j < sequences.m_data.front().size(); ++j)
-        {
-            for (auto& t : m_transformations)
-            {
-                sequences.m_data[t.second][j] = t.first.m_transformer->Transform(sequences.m_data[t.second][j]);
-            }
-        }
+			for (int j = 0; j < sequences.m_data.front().size(); ++j)
+			{
+				size_t stepper = m_transformations.size() - 1;
+				for (auto& t : m_transformations)
+				{
+					if (stepper != 0) {
+						sequences.m_data[t.second][j] = t.first.m_transformer->Transform(sequences.m_data[t.second][j]);
+					}
+					stepper--;
+				}
+			}
+
+			unsigned int checkSum = InfoCheck(sequences);
+
+			testFileOut << checkSum << std::endl;
+		}
+
+		testFileOut.close();
 
         return sequences;
     }
@@ -96,6 +115,8 @@ private:
         assert(false);
         LogicError("Unexpected stream specified for transformation.");
     }
+
+	unsigned int InfoCheck(Sequences& sequence);
 
     SequenceEnumeratorPtr m_sequenceProvider;
     std::vector<StreamDescriptionPtr> m_outputStreams;
