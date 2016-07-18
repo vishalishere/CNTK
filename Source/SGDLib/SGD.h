@@ -288,6 +288,8 @@ protected:
     bool m_seqGammarCalcUsesMBR;
 
     bool m_useTwoPassTraining;
+    // data set reduction
+    size_t m_dataDecimationFactor;
 };
 
 template <class ElemType>
