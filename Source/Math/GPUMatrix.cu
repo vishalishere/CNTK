@@ -1482,7 +1482,10 @@ void GPUMatrix<ElemType>::Resize(const size_t numRows, const size_t numCols, boo
 
         SetBuffer(pArray, numElements * sizeof(ElemType));
         SetSizeAllocated(numElements);
-    }
+	}
+	else {
+		fprintf(stderr, "reallocated size not big enough to do a resize: allocated size is %d\n", (int)GetSizeAllocated());
+	}	
     
     // success
     m_sliceViewOffset = 0;
@@ -3094,6 +3097,7 @@ template <class ElemType>
 void GPUMatrix<ElemType>::ROIPoolingBackward(const int num_rois, const int img_count, const int channels, const int height, const int width,
 	const int pooled_height, const int pooled_width, const GPUMatrix<ElemType>& roi_data, GPUMatrix<ElemType>& grad, GPUMatrix<ElemType>& argmax) const
 {
+	fprintf(stderr, "ROIPool BPROP\n");
 	PrepareDevice();
 	SyncGuard syncGuard;
 

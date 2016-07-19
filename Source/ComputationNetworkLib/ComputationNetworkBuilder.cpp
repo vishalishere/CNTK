@@ -149,6 +149,7 @@ static shared_ptr<ComputationNode<ElemType>> CreateNode(const std::wstring& node
     else if (nodeType == OperationNameOf(LearnableParameter))       return New<LearnableParameter<ElemType>>(forward<_Types>(_Args)...);
     else if (nodeType == OperationNameOf(MaxPoolingNode))           return New<MaxPoolingNode<ElemType>>(forward<_Types>(_Args)...);
     else if (nodeType == OperationNameOf(ROIPoolingNode))           return New<ROIPoolingNode<ElemType>>(forward<_Types>(_Args)...);
+	else if (nodeType == OperationNameOf(ReconcileDynamicAxisNode)) return New<ReconcileDynamicAxisNode<ElemType>>(forward<_Types>(_Args)...);
     else return CreateStandardNode<ElemType>(nodeType, forward<_Types>(_Args)...);
 }
 
@@ -288,6 +289,13 @@ shared_ptr<ComputationNode<ElemType>> ComputationNetworkBuilder<ElemType>::Creat
 	return net.AddNodeToNetWithElemType(New<ROIPoolingNode<ElemType>>(net.GetDeviceId(), nodeName, H, W, imageLayoutKind));
 }
 
+template <class ElemType>
+shared_ptr<ComputationNode<ElemType>> ComputationNetworkBuilder<ElemType>::CreateReconcileDynamicAxisNode(const std::wstring& nodeName)
+{
+	return net.AddNodeToNetWithElemType(New<ReconcileDynamicAxisNode<ElemType>>(net.GetDeviceId(), nodeName));
+}
+
+
 // this is the catch-all for all cases not covered as special cases above
 // Unlike the specialized ones above, this one creates nodes by type given as a string.
 template <class ElemType>
@@ -378,6 +386,12 @@ template <class ElemType>
 shared_ptr<ComputationNode<ElemType>> ComputationNetworkBuilder<ElemType>::ROIPooling(const ComputationNodePtr inputROIs, const ComputationNodePtr inputValues, const size_t H, const size_t W, ImageLayoutKind imageLayoutKind, const std::wstring nodeName)
 {
 	return net.AddNodeToNetAndAttachInputs(New<ROIPoolingNode<ElemType>>(net.GetDeviceId(), nodeName, H, W, imageLayoutKind), { inputROIs, inputValues });
+}
+
+template <class ElemType>
+shared_ptr<ComputationNode<ElemType>> ComputationNetworkBuilder<ElemType>::ReconcileDynamicAxis(const ComputationNodePtr dataInput, const ComputationNodePtr layoutInput, const std::wstring nodeName)
+{
+	return net.AddNodeToNetAndAttachInputs(New<ReconcileDynamicAxisNode<ElemType>>(net.GetDeviceId(), nodeName), { dataInput, layoutInput });
 }
 
 template <class ElemType>

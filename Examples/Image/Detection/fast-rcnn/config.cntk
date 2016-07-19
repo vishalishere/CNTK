@@ -10,27 +10,66 @@ ndlMacros="$ConfigDir$/Macros.ndl"
 precision="float"
 deviceId="Auto"
 
-command=AddROILayer:Write
+command=AddROILayer:Train
 
 parallelTrain="false"
 
 #stderr="$OutputDir$/AlexNet"
 traceLevel=1
-numMBsToShowResult=5 #500
+numMBsToShowResult=1 #500
 
 AddROILayer=[    
     action="edit"
     CurModel="$ConfigDir$/AlexNet.89"
-    NewModel="$ConfigDir$/AlexNet.ROI"
+    NewModel="$ConfigDir$/AlexNet.rcnn.0"
     editPath="$ConfigDir$/AddROILayer.mel"
 ]
 
-Test=[
-    action="test"
-    modelPath="$ConfigDir$/AlexNet.ROI"
-    # Set minibatch size for testing.
-    minibatchSize=32
-   
+AddObjectSoftmax=[
+    action="edit"
+    CurModel="$ConfigDir$/AlexNet.ROI"
+    NewModel="$ConfigDir$/AlexNet.new"
+    editPath="$ConfigDir$/AddObjectSoftmax.mel"
+]
+
+ChangeInputSize=[    
+    action="edit"
+    CurModel="$ConfigDir$/AlexNet.ROI"
+    NewModel="$ConfigDir$/AlexNet.big"
+    editPath="$ConfigDir$/ChangeInputSize.mel"
+]
+
+
+Train=[
+    action="train"
+
+    modelPath="$ConfigDir$/AlexNet.rcnn"
+    NDLNetworkBuilder=[
+        networkDescription="$ConfigDir$/AlexNet-RCNN.ndl"
+    ]
+    
+    SGD=[
+        epochSize=0
+        minibatchSize=8
+        learningRatesPerMB=0.001*80:0.0001
+        momentumPerMB=0.9
+        maxEpochs=100
+        gradUpdateType=None
+        L2RegWeight=0.0005
+        dropoutRate=0.5
+        
+        ParallelTrain=[
+            parallelizationMethod="DataParallelSGD"
+            distributedMBReading="true"
+            parallelizationStartEpoch=1
+            DataParallelSGD=[
+                gradientBits=32
+            ]
+        ]
+        
+        numMBsToShowResult=5
+
+    ]
     reader=[
         randomize = false
 	verbosity = 2
@@ -38,30 +77,34 @@ Test=[
 	[
 	    type = "CNTKTextFormatDeserializer"
 	    module = "CNTKTextFormatReader"
-	    file = "$ConfigDir$/test_voc500rois.txt"
+	    file = "$ConfigDir$/trainval2012.rois.txt"
 	    input = [
 	        rois = [
-		    dim = 40
+		    dim = 8000
 		    format = "dense"
 		]
 	    ]
-	]:
-	[
+	]:[
+            type = "CNTKTextFormatDeserializer"
+	    module = "CNTKTextFormatReader"
+	    file = "$ConfigDir$/trainval2012.roilabels.txt"
+	    input = [
+	        roiLabels = [
+		    dim = 42000
+		    format = "dense"
+		]
+	    ]
+	]:[
 	    type = "ImageDeserializer"
 	    module = "ImageReader"
-	    file="$ConfigDir$/test_voc500.txt"
+	    file="$ConfigDir$/trainval2012.txt"
 	    input = [
 	        features = [
 	        transforms = (
-                    [
-                        type = "Crop"
-                        # Possible values: Center, Random. Default: Center
-                        cropType = "Random"
-                        # Crop scale ratio.
-                        cropRatio = 0.875
-                        # Crop scale ratio jitter type
-                        jitterType = "uniRatio"
-                    ]:[
+		    [
+		        type = "Crop"
+			cropType = "Center"
+		    ]:[
                         type = "Scale"
                         width = 224
                         height = 224
@@ -78,7 +121,7 @@ Test=[
                     ]
                 )
 		]
-		labels=[
+		ignored=[
             	    labelDim=1000
 		]
 	    ]
@@ -87,12 +130,14 @@ Test=[
     ]
 ]
 
+
+
 Write=[
     action="write"
-    modelPath="$ConfigDir$/AlexNet.ROI"
+    modelPath="$ConfigDir$/AlexNet.big"
     # Set minibatch size for testing.
     minibatchSize=32
-    outputPath="chunk4"
+    outputPath="D:\planeGPU-big"
     reader=[
         randomize = false
 	verbosity = 2
@@ -100,10 +145,10 @@ Write=[
 	[
 	    type = "CNTKTextFormatDeserializer"
 	    module = "CNTKTextFormatReader"
-	    file = "$ConfigDir$/test_voc500rois.txt"
+	    file = "$ConfigDir$/patrickplane.rois.txt"
 	    input = [
 	        rois = [
-		    dim = 40
+		    dim = 8000
 		    format = "dense"
 		]
 	    ]
@@ -111,19 +156,14 @@ Write=[
 	[
 	    type = "ImageDeserializer"
 	    module = "ImageReader"
-	    file="$ConfigDir$/test_voc500.txt"
+	    file="$ConfigDir$/plane.txt"
 	    input = [
-	        features = [
+	        newFeatures = [
 	        transforms = (
-                    [
-                        type = "Crop"
-                        # Possible values: Center, Random. Default: Center
-                        cropType = "Random"
-                        # Crop scale ratio.
-                        cropRatio = 0.875
-                        # Crop scale ratio jitter type
-                        jitterType = "uniRatio"
-                    ]:[
+		    [
+		        type = "Crop"
+			cropType = "Center"
+		    ]:[
                         type = "Scale"
                         width = 224
                         height = 224
@@ -134,6 +174,13 @@ Write=[
                         type = "Mean"
                         # Stores mean values for each pixel in OpenCV matrix XML format.
                         meanFile = "$ConfigDir$/ImageNet1K_mean.xml"
+                    ]:[
+                        type = "Scale"
+                        width = 448
+                        height = 448
+                        channels = 3
+                        # Interpolation to use when scaling image to width x height size.
+                        interpolations = "linear"
                     ]:[
                         # Changes the image layout from HWC to CHW
                         type = "Transpose"
@@ -148,5 +195,5 @@ Write=[
 	)
     ]
 
-    outputNodeNames = (roi, rshp, h2.y)
+    # outputNodeNames = (roi)
 ]

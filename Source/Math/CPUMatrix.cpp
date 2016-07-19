@@ -4381,7 +4381,7 @@ void CPUMatrix<ElemType>::ROIPoolingForward(const int num_rois, const int img_co
 						//int output_idx = roi_idx*roi_output_size + c + (outh + outw*m_outH)*num_channels;
 						int output_idx = roi_idx * roi_output_size + outw + outh * pooled_width + c * pooled_height * pooled_width;
 						//fprintf(stderr, "going in output location %d\n", output_idx);
-						output(output_idx, img_idx) = -1;
+						output(output_idx, img_idx) = -FLT_MAX;
 
 						if (isempty)
 							output(output_idx, img_idx) = 0;
@@ -4392,11 +4392,7 @@ void CPUMatrix<ElemType>::ROIPoolingForward(const int num_rois, const int img_co
 								//int data_idx = c + (h + w*input_h)*num_channels;
 								if (img(data_idx, 0) > output(output_idx, img_idx)) {
 									output(output_idx, img_idx) = img(data_idx, 0);
-									if (0) {
-										argmax.Print(nullptr);
-									}
-
-									//argmax(output_idx, img_idx) = data_idx;
+									argmax(output_idx, img_idx) = (float)data_idx;
 								}
 							}
 						}

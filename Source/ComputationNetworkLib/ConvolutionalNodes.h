@@ -438,17 +438,17 @@ class ROIPoolingNode : public ComputationNode<ElemType>, public NumInputs<2>
 public:
 
 	ROIPoolingNode(DEVICEID_TYPE deviceId, const wstring& name)
-		: Base(deviceId, name)
+		: Base(deviceId, name), m_argmaxData(Matrix<ElemType>::Zeros(1,1,deviceId))
 	{
 	}
 	ROIPoolingNode(DEVICEID_TYPE deviceId, const wstring& name, const size_t H, const size_t W, ImageLayoutKind imageLayoutKind)
-		: Base(deviceId, name), m_outH(H), m_outW(W), m_imageLayout(imageLayoutKind)
+		: Base(deviceId, name), m_outH(H), m_outW(W), m_imageLayout(imageLayoutKind), m_argmaxData(Matrix<ElemType>::Zeros(1, 1, deviceId))
 	{
 	}
 
 	ROIPoolingNode(const ScriptableObjects::IConfigRecordPtr configp)
 		: ROIPoolingNode(configp->Get(L"deviceId"), L"<placeholder>", configp->Get(L"H"), configp->Get(L"W"),
-						 ImageLayoutKindFrom(configp->Get(L"imageLayout")))
+		ImageLayoutKindFrom(configp->Get(L"imageLayout")))
 	{
 		AttachInputsFromConfig(configp, GetExpectedNumInputs());
 	}
@@ -466,6 +466,12 @@ public:
 		RequestMatrixFromPool(m_tempMatrix, matrixPool);
 	}
 
+	void ReleaseMatricesAfterBackprop(MatrixPool& matrixPool) override
+	{
+		Base::ReleaseMatricesAfterBackprop(matrixPool);
+		ReleaseMatrixToPool(m_tempMatrix, matrixPool);
+	}
+
 	void ForwardProp(const FrameRange& fr) override
 	{
 
@@ -481,7 +487,7 @@ public:
 		// our output slice for this minibatch.
 		Matrix<ElemType> outputSlice = ValueFor(fr);
 
-		// input slice is w*h*c x bsz; cols are images.
+		// input slice is c*h*w x bsz; cols are images.
 		// rois is rois_per_image*4 x bsz; cols are rois for different images.
 		// each ROI is (x, y, w, h) relative to original image size.
 
@@ -489,9 +495,16 @@ public:
 		int input_h = inputShape[1];
 		int num_channels = inputShape[2];
 
+		m_tempMatrix->Resize(m_outH * m_outW * num_channels * rois_per_image, inputSlice.GetNumCols());
+		m_tempMatrix->Reshape(m_outH * m_outW * num_channels * rois_per_image, inputSlice.GetNumCols());
+		fprintf(stderr, "past temp resize/reshape\n");
+
+		// tempMatrix is used to store argmax data.
+		//m_argmaxData = Matrix<ElemType>::Zeros(m_outH * m_outW * num_channels * rois_per_image, inputSlice.GetNumCols(), m_deviceId);
+
 		inputSlice.ROIPoolingForward(rois_per_image, inputSlice.GetNumCols(), 
 			num_channels, input_h, input_w, m_outH, m_outW, ROIs, outputSlice, *m_tempMatrix);
-
+		fprintf(stderr, "past fprop call");
 	}
 
 	void Save(File& fstream) const override
@@ -533,6 +546,7 @@ public:
 
 		// hack for now...4D tensor.
 		SetDims(TensorShape(m_outW, m_outH, inDims.m_numChannels, rois_per_image), HasMBLayout());
+		//m_argmaxData = Matrix<ElemType>::Zeros(m_outW*m_outH*inDims.m_numChannels, 32, m_deviceId);
 	}
 
 	void BackpropTo(const size_t /*inputIndex*/, const FrameRange& fr) override
@@ -544,7 +558,9 @@ public:
 		int input_h = inputShape[1];
 		int num_channels = inputShape[2];
 
-		auto& input_grad = Input(1)->GradientAsMatrix();
+		//auto& input_grad = Input(1)->GradientAsMatrix();
+		auto input_grad = Input(1)->GradientFor(fr);
+
 		auto pooledGrad = GradientFor(fr);
 
 		int rois_per_image = GetInputSampleLayout(0)[0] / 4;
@@ -575,10 +591,8 @@ public:
 protected:
 	size_t m_outH, m_outW;
 	ImageLayoutKind m_imageLayout; // how to interpret the tensor (which dimensions are X/Y and C)
-	ConvolveGeometryPtr m_geometry;
 	shared_ptr<Matrix<ElemType>> m_tempMatrix;
-	std::unique_ptr<ConvolutionEngine<ElemType>> m_convEng;
-
+	Matrix<ElemType> m_argmaxData;
 };
 
 // -----------------------------------------------------------------------
@@ -967,7 +981,7 @@ class MaxPoolingNode : public PoolingNodeBase<ElemType>
 
 public:
     MaxPoolingNode(DEVICEID_TYPE deviceId, const wstring& name)
-        : Base(deviceId, name)
+		: Base(deviceId, name)
     {
     }
     MaxPoolingNode(DEVICEID_TYPE deviceId, const wstring& name, const size_t windowWidth, const size_t windowHeight, const size_t horizontalSubsample, const size_t verticalSubsample, ImageLayoutKind imageLayoutKind)
