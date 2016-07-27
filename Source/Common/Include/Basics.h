@@ -579,6 +579,19 @@ struct nocase_compare
 // random collection of stuff we needed at some place
 // ----------------------------------------------------------------------------
 
+// Array struct
+template <class ElemType>
+struct Array
+{
+    Array(ElemType* elementsIn, size_t sizeIn)
+    {
+        elements = elementsIn;
+        size = sizeIn;
+    }
+    ElemType* elements;
+    size_t size;
+};
+
 // TODO: maybe change to type id of an actual thing we pass in
 // TODO: is this header appropriate?
 template <class C>
