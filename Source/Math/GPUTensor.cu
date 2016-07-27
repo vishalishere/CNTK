@@ -465,7 +465,7 @@ struct TensorOpElement<ElemType, N, M, K, /*parallelReduce=*/true, /*k=*/-1>
 
         // Compute the operation for this input coordinate.
         // First initialize aggregator.
-        ReduceElemType aggregate = TensorOpParallelReduce<ElemType, N, M, M - 1>::Compute(reductionBegin + tids, pointers, op, reducingOpDims, reducingStrides);
+        ReduceElemType aggregate = TensorOpParallelReduce<ElemType, N, M, M - 1>::Compute(reductionBegin + tid, pointers, op, reducingOpDims, reducingStrides);
 
         for (CUDA_LONG redId = reductionBegin + tid + tids; redId < reductionEnd; redId += tids)
         {
