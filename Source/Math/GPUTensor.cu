@@ -19,7 +19,6 @@
 #include <cuda_runtime.h>
 #include "cublas_v2.h"
 #include <assert.h>
-#include<limits.h>
 
 #ifndef let
 #define let const auto
@@ -261,37 +260,6 @@ struct TensorOps
     }
 };
 
-//----------------------------------------------------------------------------
-// For reductions we need the neutral elements of the corresponding binary ops
-//----------------------------------------------------------------------------
-template <typename ElemType> __device__ ElemType NeutralValue(ElementWiseOperator op)
-{
-    return 0; // error, only the explicit instantiations below should be used.
-};
-
-template<> __device__ float NeutralValue<float>(ElementWiseOperator op)
-{
-    switch (op)
-    {
-    case ElementWiseOperator::opMax: return FLT_MIN;
-    case ElementWiseOperator::opMin: return FLT_MAX;
-    case ElementWiseOperator::opSum: return 0;
-    default:                         return 0; // error
-    }
-};
-
-template<> __device__ double NeutralValue<double>(ElementWiseOperator op)
-{
-    switch (op)
-    {
-    case ElementWiseOperator::opMax: return DBL_MIN;
-    case ElementWiseOperator::opMin: return DBL_MAX;
-    case ElementWiseOperator::opSum: return 0;
-    default:                         return 0; // error
-    }
-};
-
-
 // ----------------------------------------------------------------------------
 // Function to update an aggregate value for the specifed reduction operation
 // ----------------------------------------------------------------------------
@@ -495,10 +463,11 @@ struct TensorOpElement<ElemType, N, M, K, /*parallelReduce=*/true, /*k=*/-1>
         reductionBegin += reductionChunkSize * reductionBlock;
         CUDA_LONG reductionEnd = min(reductionBegin + reductionChunkSize, reductionDim);
 
-        // compute the operation for this input coordinate
-        ReduceElemType aggregate = NeutralValue<ReduceElemType>(reductionOp);
+        // Compute the operation for this input coordinate.
+        // First initialize aggregator.
+        ReduceElemType aggregate = TensorOpParallelReduce<ElemType, N, M, M - 1>::Compute(reductionBegin + tid, pointers, op, reducingOpDims, reducingStrides);
 
-        for (CUDA_LONG redId = reductionBegin + tid; redId < reductionEnd; redId += tids)
+        for (CUDA_LONG redId = reductionBegin + tid + tids; redId < reductionEnd; redId += tids)
         {
             auto val = TensorOpParallelReduce<ElemType, N, M, M - 1>::Compute(redId, pointers, op, reducingOpDims, reducingStrides);
             UpdateAggregate<ReduceElemType, ElemType>(aggregate, val, reductionOp);
